@@ -1,15 +1,12 @@
 import pg from "pg";
-import dotenv from "dotenv";
-dotenv.config();
+import dns from "dns";
+dns.setDefaultResultOrder("ipv4first");
 
 const { Pool } = pg;
 
 export const pool = new Pool({
-  host: "localhost",
-  port: 5432,
-  database: "rodd",
-  user: "postgres",
-  password: "Rodd2024",
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
 });
