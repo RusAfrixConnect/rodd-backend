@@ -19,37 +19,49 @@ const r2 = new S3Client({
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 router.post("/audio", upload.single("audio"), async (req, res) => {
+  console.log("📥 Upload reçu - type:", req.body.type, "- file:", req.file?.originalname, "- size:", req.file?.size);
+
   try {
     const { type } = req.body;
     const file = req.file;
-    if (!file) return res.status(400).json({ error: "Fichier audio manquant" });
+    if (!file) {
+      console.log("❌ Pas de fichier reçu");
+      return res.status(400).json({ error: "Fichier audio manquant" });
+    }
 
     let audioUrl = null;
 
-    // Upload vers R2 seulement si configuré
+    console.log("🔍 R2_ENDPOINT:", process.env.R2_ENDPOINT ? "défini" : "MANQUANT");
+    console.log("🔍 R2_ACCESS_KEY:", process.env.R2_ACCESS_KEY ? "défini" : "MANQUANT");
+    console.log("🔍 R2_BUCKET:", process.env.R2_BUCKET || "MANQUANT");
+
     if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY) {
-      const key = `audio/${type}/${req.user.id}/${uuidv4()}.m4a`;
-      await r2.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype || "audio/m4a",
-      }));
-      audioUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+      try {
+        const key = `audio/${type}/${req.user.id}/${uuidv4()}.m4a`;
+        console.log("📤 Upload vers R2, key:", key);
+        await r2.send(new PutObjectCommand({
+          Bucket: process.env.R2_BUCKET,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype || "audio/m4a",
+        }));
+        audioUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+        console.log("✅ Upload R2 réussi:", audioUrl);
+      } catch (r2Err) {
+        console.error("❌ R2 ERROR:", r2Err.message);
+        console.error(r2Err);
+      }
+    } else {
+      console.log("⚠️ R2 non configuré, skip upload");
     }
 
     let transcription = null;
     let language = null;
 
-    // Transcription Whisper pour les posts publics
     if (type !== "message" && process.env.OPENAI_API_KEY) {
       try {
         const { toFile } = await import("openai");
-        const audioFile = await toFile(
-          file.buffer,
-          "audio.m4a",
-          { type: "audio/m4a" }
-        );
+        const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
 
         const response = await openai.audio.transcriptions.create({
           file: audioFile,
@@ -58,14 +70,15 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
 
         transcription = response.text;
         language = response.language;
+        console.log("✅ Transcription réussie:", transcription);
       } catch (whisperErr) {
-        console.warn("Whisper error:", whisperErr.message);
+        console.error("❌ Whisper error:", whisperErr.message);
       }
     }
 
     res.json({ audioUrl, transcription, language });
   } catch (err) {
-    console.error(err);
+    console.error("❌ ERREUR GLOBALE:", err);
     res.status(500).json({ error: "Erreur upload" });
   }
 });
