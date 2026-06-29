@@ -14,6 +14,7 @@ const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY,
     secretAccessKey: process.env.R2_SECRET_KEY,
   },
+  forcePathStyle: true,
 });
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
