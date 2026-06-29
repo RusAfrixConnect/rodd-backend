@@ -1,7 +1,6 @@
 import express from "express";
 import multer from "multer";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import OpenAI from "openai";
 import { v4 as uuidv4 } from "uuid";
 
 const router = express.Router();
@@ -17,12 +16,6 @@ const r2 = new S3Client({
   forcePathStyle: true,
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  timeout: 60000,
-  maxRetries: 3,
-});
-
 router.post("/audio", upload.single("audio"), async (req, res) => {
   console.log("📥 Upload reçu - type:", req.body.type, "- file:", req.file?.originalname, "- size:", req.file?.size);
 
@@ -35,10 +28,6 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
     }
 
     let audioUrl = null;
-
-    console.log("🔍 R2_ENDPOINT:", process.env.R2_ENDPOINT ? "défini" : "MANQUANT");
-    console.log("🔍 R2_ACCESS_KEY:", process.env.R2_ACCESS_KEY ? "défini" : "MANQUANT");
-    console.log("🔍 R2_BUCKET:", process.env.R2_BUCKET || "MANQUANT");
 
     if (process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY) {
       try {
@@ -54,10 +43,7 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
         console.log("✅ Upload R2 réussi:", audioUrl);
       } catch (r2Err) {
         console.error("❌ R2 ERROR:", r2Err.message);
-        console.error(r2Err);
       }
-    } else {
-      console.log("⚠️ R2 non configuré, skip upload");
     }
 
     let transcription = null;
@@ -65,22 +51,29 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
 
     if (type !== "message" && process.env.OPENAI_API_KEY) {
       try {
-        console.log("🎙 Tentative transcription Whisper...");
-        const { toFile } = await import("openai");
-        const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
+        console.log("🎙 Tentative transcription Whisper (fetch natif)...");
+        const formData = new FormData();
+        const blob = new Blob([file.buffer], { type: "audio/m4a" });
+        formData.append("file", blob, "audio.m4a");
+        formData.append("model", "whisper-1");
 
-        const response = await openai.audio.transcriptions.create({
-          file: audioFile,
-          model: "whisper-1",
+        const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          },
+          body: formData,
         });
 
-        transcription = response.text;
-        language = response.language;
-        console.log("✅ Transcription réussie:", transcription);
+        const whisperData = await whisperRes.json();
+        if (whisperData.text) {
+          transcription = whisperData.text;
+          console.log("✅ Transcription réussie:", transcription);
+        } else {
+          console.error("❌ Whisper response error:", whisperData);
+        }
       } catch (whisperErr) {
-        console.error("❌ Whisper error détaillée:", whisperErr);
-        console.error("❌ Whisper error message:", whisperErr.message);
-        console.error("❌ Whisper error cause:", whisperErr.cause);
+        console.error("❌ Whisper error (fetch):", whisperErr.message);
       }
     }
 
