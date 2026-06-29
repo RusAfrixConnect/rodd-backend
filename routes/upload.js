@@ -59,23 +59,26 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
     let transcription = null;
     let language = null;
 
-    if (type !== "message" && process.env.OPENAI_API_KEY) {
-      try {
-        const { toFile } = await import("openai");
-        const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
+if (type !== "message" && process.env.OPENAI_API_KEY) {
+  try {
+    console.log("🎙 Tentative transcription Whisper...");
+    const { toFile } = await import("openai");
+    const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
 
-        const response = await openai.audio.transcriptions.create({
-          file: audioFile,
-          model: "whisper-1",
-        });
+    const response = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: "whisper-1",
+    });
 
-        transcription = response.text;
-        language = response.language;
-        console.log("✅ Transcription réussie:", transcription);
-      } catch (whisperErr) {
-        console.error("❌ Whisper error:", whisperErr.message);
-      }
-    }
+    transcription = response.text;
+    language = response.language;
+    console.log("✅ Transcription réussie:", transcription);
+  } catch (whisperErr) {
+    console.error("❌ Whisper error détaillée:", whisperErr);
+    console.error("❌ Whisper error message:", whisperErr.message);
+    console.error("❌ Whisper error cause:", whisperErr.cause);
+  }
+}
 
     res.json({ audioUrl, transcription, language });
   } catch (err) {
