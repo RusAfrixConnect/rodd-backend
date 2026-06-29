@@ -17,7 +17,11 @@ const r2 = new S3Client({
   forcePathStyle: true,
 });
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 60000,
+  maxRetries: 3,
+});
 
 router.post("/audio", upload.single("audio"), async (req, res) => {
   console.log("📥 Upload reçu - type:", req.body.type, "- file:", req.file?.originalname, "- size:", req.file?.size);
@@ -59,26 +63,26 @@ router.post("/audio", upload.single("audio"), async (req, res) => {
     let transcription = null;
     let language = null;
 
-if (type !== "message" && process.env.OPENAI_API_KEY) {
-  try {
-    console.log("🎙 Tentative transcription Whisper...");
-    const { toFile } = await import("openai");
-    const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
+    if (type !== "message" && process.env.OPENAI_API_KEY) {
+      try {
+        console.log("🎙 Tentative transcription Whisper...");
+        const { toFile } = await import("openai");
+        const audioFile = await toFile(file.buffer, "audio.m4a", { type: "audio/m4a" });
 
-    const response = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "whisper-1",
-    });
+        const response = await openai.audio.transcriptions.create({
+          file: audioFile,
+          model: "whisper-1",
+        });
 
-    transcription = response.text;
-    language = response.language;
-    console.log("✅ Transcription réussie:", transcription);
-  } catch (whisperErr) {
-    console.error("❌ Whisper error détaillée:", whisperErr);
-    console.error("❌ Whisper error message:", whisperErr.message);
-    console.error("❌ Whisper error cause:", whisperErr.cause);
-  }
-}
+        transcription = response.text;
+        language = response.language;
+        console.log("✅ Transcription réussie:", transcription);
+      } catch (whisperErr) {
+        console.error("❌ Whisper error détaillée:", whisperErr);
+        console.error("❌ Whisper error message:", whisperErr.message);
+        console.error("❌ Whisper error cause:", whisperErr.cause);
+      }
+    }
 
     res.json({ audioUrl, transcription, language });
   } catch (err) {
